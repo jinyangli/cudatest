@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <mpi.h>
 
 __global__  void kernel(float *array, int n, int stride)
 {
@@ -63,6 +64,13 @@ int main(int argc, char **argv)
 	printf("Array size:%dM, ThreadBlocks:%d, ThreadsPerBlock: %d Total Threads %d\n", \
 			num_elements/1000000, n_tblk, nt_tblk, n_tblk * nt_tblk);
 
+	int myrank;
+	MPI_Status status;
+	int tag = 999;
+
+	MPI_Init(&argc, &argv);
+	MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+
 	float *device_array = 0;
 	float *host_array = 0;
 
@@ -78,24 +86,32 @@ int main(int argc, char **argv)
 	// zero out the device array with cudaMemset
 	cudaMemset(device_array, 0, num_elements * sizeof(float));
 
-	// copy the contents of the device array to the host
-	clock_gettime(CLOCK_REALTIME, &t0);
-	cudaMemcpy(device_array, host_array, num_elements * sizeof(float), cudaMemcpyHostToDevice);
-	cudaDeviceSynchronize();
-	clock_gettime(CLOCK_REALTIME, &t1);
-	printf("H->D Transfer %d usec\n", timediff(&t0, &t1));
+	if (myrank == 0 ) {
+		// copy the contents of the device array to the host
+		clock_gettime(CLOCK_REALTIME, &t0);
+		cudaMemcpy(device_array, host_array, num_elements * sizeof(float), cudaMemcpyHostToDevice);
+		cudaDeviceSynchronize();
+		clock_gettime(CLOCK_REALTIME, &t1);
+		printf("H->D Transfer %d usec\n", timediff(&t0, &t1));
 
-	if (debug) {
-		cudaPrintfInit(); // initialize cuPrintf
+		if (debug) {
+			cudaPrintfInit(); // initialize cuPrintf
+		}
+
+
+		clock_gettime(CLOCK_REALTIME, &t0);
+		kernel<<<n_tblk,nt_tblk>>>(device_array, num_elements, num_elements/(n_tblk*nt_tblk));
+		cudaDeviceSynchronize();
+		clock_gettime(CLOCK_REALTIME, &t1);
+
+		printf("Kernel finished in %d usec\n", timediff(&t0, &t1));
+
+		MPI_Send(device_array, num_elements*sizeof(float), MPI_FLOAT, 1, tag, MPI_COMM_WORLD);
+		printf("MPI sent\n");
+	}else {
+		MPI_Recv(device_array, num_elements*sizeof(float), MPI_FLOAT, 0, tag, MPI_COMM_WORLD, &status);
+		printf("MPI received\n");
 	}
-
-
-	clock_gettime(CLOCK_REALTIME, &t0);
-	kernel<<<n_tblk,nt_tblk>>>(device_array, num_elements, num_elements/(n_tblk*nt_tblk));
-	cudaDeviceSynchronize();
-	clock_gettime(CLOCK_REALTIME, &t1);
-
-	printf("Kernel finished in %d usec\n", timediff(&t0, &t1));
 
 	if (debug) {
 		// display the device's greeting
@@ -122,6 +138,8 @@ int main(int argc, char **argv)
 
 	// use cudaFree to deallocate the device array
 	cudaFree(device_array);
+
+	MPI_Finalize();
 
 	return 0;
 }
