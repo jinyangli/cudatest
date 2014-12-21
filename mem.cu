@@ -14,11 +14,11 @@ __global__  void kernel(float *array, int n, int stride)
 	if (end > n)
 		end = n;
 
-	cuPrintf("n %d stride %d my_id %d start %d end %d\n", n, stride, index, start, end);
-
 	for (int i = start; i < end; i++) {
 		array[i] = sqrtf(array[i]);
 	}
+
+	cuPrintf("n %d stride %d my_id %d start %d end %d array[0]=%f\n", n, stride, index, start, end, array[0]);
 }
 
 int
@@ -29,7 +29,7 @@ timediff(struct timespec *t0, struct timespec *t1)
 
 int main(int argc, char **argv)
 {
-	bool debug = 0;
+	bool debug = 1;
 	int num_elements = 16;
 	int n_tblk = 1;
 	int nt_tblk = 1;
@@ -104,13 +104,21 @@ int main(int argc, char **argv)
 		cudaDeviceSynchronize();
 		clock_gettime(CLOCK_REALTIME, &t1);
 
-		printf("Kernel finished in %d usec\n", timediff(&t0, &t1));
+		printf("Kernel finished in %d usec %f\n", timediff(&t0, &t1), host_array[0]);
 
-		MPI_Send(device_array, num_elements*sizeof(float), MPI_FLOAT, 1, tag, MPI_COMM_WORLD);
+		clock_gettime(CLOCK_REALTIME, &t0);
+		cudaMemcpy(host_array, device_array, num_elements * sizeof(float), cudaMemcpyDeviceToHost);
+		cudaDeviceSynchronize();
+		clock_gettime(CLOCK_REALTIME, &t1);
+		printf("D->H Transfer %d usec\n", timediff(&t0, &t1));
+
+		MPI_Send(device_array, num_elements, MPI_FLOAT, 1, tag, MPI_COMM_WORLD);
 		printf("MPI sent\n");
 	}else {
-		MPI_Recv(device_array, num_elements*sizeof(float), MPI_FLOAT, 0, tag, MPI_COMM_WORLD, &status);
-		printf("MPI received\n");
+		MPI_Recv(host_array, num_elements, MPI_FLOAT, 0, tag, MPI_COMM_WORLD, &status);
+		int count;
+		MPI_Get_count(&status, MPI_FLOAT, &count); 
+		printf("MPI received %d floats %f\n", count, host_array[0]);
 	}
 
 	if (debug) {
@@ -121,14 +129,8 @@ int main(int argc, char **argv)
 		cudaPrintfEnd();
 	}
 
-	clock_gettime(CLOCK_REALTIME, &t0);
-	cudaMemcpy(host_array, device_array, num_elements * sizeof(float), cudaMemcpyDeviceToHost);
-	cudaDeviceSynchronize();
-	clock_gettime(CLOCK_REALTIME, &t1);
-	printf("D->H Transfer %d usec\n", timediff(&t0, &t1));
-
 	if (debug) {
-		for(int i = 0; i < num_elements; ++i)
+		for(int i = 0; i < (num_elements<10?num_elements:10); ++i)
 			printf("%f ", host_array[i]);
 		printf("\n");
 	}
