@@ -1,16 +1,16 @@
-all: mem 
+all: mem mpitest
 
 mem.o: mem.cu
-	nvcc -c mem.cu 
+	nvcc -c -g mem.cu 
 
 main.o: main.cc
-	mpicc -c main.cc
+	mpic++ -c -g main.cc
 
 mem : mem.o main.o
-	mpicc main.o mem.o -L/share/apps/cuda/6.5.12/lib64 -lcudart
+	mpic++ main.o mem.o -L${CUDA_LIB} -lcudart -o mem
 
 mpitest: mpitest.cc
-	nvcc mpitest.cc -lmpi -o mpitest
+	nvcc -I${MPI_HOME}/include mpitest.cc -L${MPI_HOME}/lib -lmpi -o mpitest
 
 clean:
-	rm -f mem mpitest
+	rm -f mem mpitest *.o

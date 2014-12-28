@@ -54,25 +54,40 @@ int main(int argc, char **argv)
 	float *device_array = 0;
 	float *host_array = 0;
 
-	// malloc host memory
-	host_array = (float *)malloc(num_elements * sizeof(float));
+	alloc_mem(&host_array, &device_array, num_elements);
+
+	//init host memory
 	for (int i = 0; i < num_elements; i++) {
 		host_array[i] = i + 4.0;
 	}
 
-	alloc_device_mem(&device_array, num_elements);
-	
+	if (debug) {
+		int i = 5;
+		char hostname[256];
+		gethostname(hostname, sizeof(hostname));
+		printf("PID %d on %s ready for attach\n", getpid(), hostname);
+		fflush(stdout);
+		while (0 == i)
+			sleep(5);
+
+		printf("rank 0: host_array %p device_array %p\n", host_array, device_array);
+	}
+
 	if (myrank == 0 ) {
 		// copy the contents of the device array to the host
-		transfer_mem(device_array, host_array, num_elements, true);
+		//transfer_mem(device_array, host_array, num_elements, true);
+		copy_mem(device_array, host_array, num_elements);
 		
 		launch_kernel(n_tblk, nt_tblk, device_array, num_elements);
 
-		transfer_mem(device_array, host_array, num_elements, false);
+		//transfer_mem(device_array, host_array, num_elements, false);
+		copy_mem(host_array, device_array, num_elements);
+
 		
 		MPI_Send(device_array, num_elements, MPI_FLOAT, 1, tag, MPI_COMM_WORLD);
 		printf("MPI sent\n");
 	}else {
+
 		MPI_Recv(device_array, num_elements, MPI_FLOAT, 0, tag, MPI_COMM_WORLD, &status);
 		int count;
 		MPI_Get_count(&status, MPI_FLOAT, &count); 
@@ -86,11 +101,7 @@ int main(int argc, char **argv)
 		printf("\n");
 	}
 
-	// use free to deallocate the host array
-	free(host_array);
-
-
-	free_device_mem(device_array);
+	free_mem(host_array, device_array);
 
 	MPI_Finalize();
 
