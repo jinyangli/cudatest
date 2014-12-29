@@ -7,7 +7,7 @@
 
 
 #include "mem.h"
-#include "timediff.h"
+#include "timer.h"
 
 extern int debug;
 
@@ -30,15 +30,15 @@ __global__  void kernel(float *array, int n, int stride)
 
 void launch_kernel(int n_tblk, int nt_tblk, float *device, int n)
 {	
-	struct timespec t0, t1;
 
 	if (debug) cudaPrintfInit(); // initialize cuPrintf
 
-	clock_gettime(CLOCK_REALTIME, &t0);
-	kernel<<<n_tblk,nt_tblk>>>(device, n, n/(n_tblk*nt_tblk));
-	cudaDeviceSynchronize();
-	clock_gettime(CLOCK_REALTIME, &t1);
-	printf("Kernel finished in %ld usec\n", TIME_DIFF(t0, t1));
+	{
+		Timer t("Kernel finished ");
+
+		kernel<<<n_tblk,nt_tblk>>>(device, n, n/(n_tblk*nt_tblk));
+		cudaDeviceSynchronize();
+	}
 
 	if (debug) {
 		// display the device's greeting
